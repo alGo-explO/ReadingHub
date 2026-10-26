@@ -24,6 +24,10 @@ function Navbar({ setToken }) {
         if (response.ok) {
           const userData = await response.json();
           setUser(userData);
+        } else if (response.status === 401 || response.status === 403) {
+          localStorage.removeItem('token');
+          setToken(null);
+          window.location.href = '/login';
         }
       } catch (error) {
         console.error('Failed to fetch user data:', error);
@@ -31,6 +35,11 @@ function Navbar({ setToken }) {
     };
 
     fetchUser();
+    const handleProfileUpdate = (event) => {
+      setUser((previous) => ({ ...previous, ...event.detail }));
+    };
+    window.addEventListener('profile-updated', handleProfileUpdate);
+    return () => window.removeEventListener('profile-updated', handleProfileUpdate);
   }, []);
 
   const handleLogout = () => {
@@ -142,8 +151,10 @@ function Navbar({ setToken }) {
                 onClick={() => setShowProfileMenu(!showProfileMenu)}
                 className="w-10 h-10 rounded-full flex items-center justify-center text-white font-medium hover:opacity-90 transition"
                 style={{ backgroundColor: '#1a535c' }}
+                aria-label="Open profile menu"
+                aria-expanded={showProfileMenu}
               >
-                PS
+                {getUserInitial()}
               </button>
 
               {showProfileMenu && (

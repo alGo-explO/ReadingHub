@@ -22,6 +22,9 @@ function AIInsights() {
       if (response.ok) {
         const data = await response.json();
         setRecommendations(data.recommendations || []);
+      } else if (response.status === 401 || response.status === 403) {
+        localStorage.removeItem('token');
+        window.location.href = '/login';
       }
     } catch (error) {
       console.error('Error fetching recommendations:', error);
@@ -41,6 +44,9 @@ function AIInsights() {
       if (response.ok) {
         const data = await response.json();
         setInsights(data.insights);
+      } else if (response.status === 401 || response.status === 403) {
+        localStorage.removeItem('token');
+        window.location.href = '/login';
       }
     } catch (error) {
       console.error('Error fetching insights:', error);
@@ -60,6 +66,9 @@ function AIInsights() {
       if (response.ok) {
         const data = await response.json();
         setGoals(data.goals);
+      } else if (response.status === 401 || response.status === 403) {
+        localStorage.removeItem('token');
+        window.location.href = '/login';
       }
     } catch (error) {
       console.error('Error fetching goals:', error);
@@ -71,6 +80,21 @@ function AIInsights() {
   const sendChatMessage = async () => {
     if (!chatMessage.trim()) return;
 
+    const token = localStorage.getItem('token');
+    if (!token) {
+      setChatHistory(prev => [
+        ...prev,
+        { type: 'user', message: chatMessage },
+        {
+          type: 'ai',
+          message: 'Your session has expired or you are not logged in. Please log in again to continue.',
+          isAuthError: true
+        }
+      ]);
+      setChatMessage('');
+      return;
+    }
+
     setChatLoading(true);
     const userMessage = chatMessage;
     setChatMessage('');
@@ -79,7 +103,6 @@ function AIInsights() {
     setChatHistory(prev => [...prev, { type: 'user', message: userMessage }]);
 
     try {
-      const token = localStorage.getItem('token');
       const response = await fetch(`${API_URL}/api/ai/chat`, {
         method: 'POST',
         headers: {
@@ -93,11 +116,24 @@ function AIInsights() {
         const data = await response.json();
         setChatHistory(prev => [...prev, { type: 'ai', message: data.response }]);
       } else {
-        setChatHistory(prev => [...prev, { type: 'ai', message: 'Sorry, I encountered an error. Please try again.' }]);
+        const errData = await response.json().catch(() => ({}));
+        if (response.status === 401 || response.status === 403) {
+          localStorage.removeItem('token');
+          setChatHistory(prev => [...prev, {
+            type: 'ai',
+            message: 'Your session has expired or is invalid. Please log in again to continue.',
+            isAuthError: true
+          }]);
+        } else {
+          setChatHistory(prev => [...prev, {
+            type: 'ai',
+            message: errData.message || errData.error || 'Sorry, I encountered an error. Please try again.'
+          }]);
+        }
       }
     } catch (error) {
       console.error('Error sending chat message:', error);
-      setChatHistory(prev => [...prev, { type: 'ai', message: 'Sorry, I encountered an error. Please try again.' }]);
+      setChatHistory(prev => [...prev, { type: 'ai', message: 'Unable to reach the server. Please check your connection and ensure the backend is running.' }]);
     } finally {
       setChatLoading(false);
     }
@@ -348,6 +384,15 @@ function AIInsights() {
                             : 'bg-white text-gray-800 border'
                         }`}>
                           <p className="text-sm">{chat.message}</p>
+                          {chat.isAuthError && (
+                            <a
+                              href="/login"
+                              className="inline-block mt-2 px-3 py-1.5 text-xs font-semibold text-white rounded-md hover:opacity-90 transition shadow-sm"
+                              style={{ backgroundColor: '#1a535c' }}
+                            >
+                              Log in again →
+                            </a>
+                          )}
                         </div>
                       </div>
                     ))}

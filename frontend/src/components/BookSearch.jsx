@@ -1,34 +1,55 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { API_URL } from '../config';
 
 function BookSearch({ onBookSelect }) {
+  const navigate = useNavigate();
   const [query, setQuery] = useState('');
   const [books, setBooks] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [hasSearched, setHasSearched] = useState(false);
   const [expandedDescriptions, setExpandedDescriptions] = useState({});
+  const [provider, setProvider] = useState('');
 
   const searchBooks = async (searchQuery) => {
-    if (!searchQuery.trim()) return;
+    const cleanQuery = searchQuery.trim();
+    if (cleanQuery.length < 2) {
+      setError('Enter at least 2 characters to search.');
+      return;
+    }
 
     setLoading(true);
     setError('');
     setHasSearched(true);
 
     try {
-      const response = await fetch(
-        `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(searchQuery)}&maxResults=20`
-      );
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch books');
+      const token = localStorage.getItem('token');
+      if (!token) {
+        navigate('/login', { replace: true });
+        return;
       }
 
-      const data = await response.json();
+      const response = await fetch(`${API_URL}/api/books/search?q=${encodeURIComponent(cleanQuery)}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          localStorage.removeItem('token');
+          navigate('/login', { replace: true });
+          return;
+        }
+        throw new Error(data.error || 'Book search is temporarily unavailable.');
+      }
+
       setBooks(data.items || []);
+      setProvider(data.provider || '');
     } catch (err) {
-      setError('Failed to search books. Please check your internet connection and try again.');
+      setError(err.message || 'Failed to search books. Please try again.');
       setBooks([]);
+      setProvider('');
     } finally {
       setLoading(false);
     }
@@ -54,7 +75,8 @@ function BookSearch({ onBookSelect }) {
 
   const getBookCover = (book) => {
     const imageLinks = book.volumeInfo?.imageLinks;
-    return imageLinks?.thumbnail || imageLinks?.smallThumbnail || null;
+    const cover = imageLinks?.thumbnail || imageLinks?.smallThumbnail;
+    return cover ? cover.replace(/^http:\/\//i, 'https://') : null;
   };
 
   const formatAuthors = (authors) => {
@@ -122,6 +144,7 @@ function BookSearch({ onBookSelect }) {
             placeholder="Search for books by title, author, or keywords..."
             className="flex-1 px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-gray-400 text-gray-900"
             disabled={loading}
+            minLength="2"
           />
           <button
             type="submit"
@@ -159,7 +182,11 @@ function BookSearch({ onBookSelect }) {
 
       {/* Results Grid */}
       {books.length > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <>
+          {provider === 'open-library' && (
+            <p className="mb-4 text-sm text-gray-500">Results provided by Open Library</p>
+          )}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {books.map((book) => {
             const bookId = book.id;
             const volumeInfo = book.volumeInfo || {};
@@ -259,7 +286,8 @@ function BookSearch({ onBookSelect }) {
               </div>
             );
           })}
-        </div>
+          </div>
+        </>
       )}
 
       {/* Results Count */}

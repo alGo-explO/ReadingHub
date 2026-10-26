@@ -17,7 +17,7 @@ class GeminiService {
     
     try {
       this.genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-      this.model = this.genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+      this.model = this.genAI.getGenerativeModel({ model: process.env.GEMINI_MODEL || 'gemini-2.5-flash' });
       this.initialized = true;
       console.log('✅ Gemini AI service initialized successfully');
     } catch (error) {
@@ -29,6 +29,45 @@ class GeminiService {
   ensureInitialized() {
     if (!this.initialized) {
       this.initialize();
+    }
+  }
+
+  async generateText(prompt) {
+    this.ensureInitialized();
+    const candidateModels = [
+      process.env.GEMINI_MODEL,
+      'gemini-2.5-flash'
+    ].filter(Boolean);
+
+    const modelsToTry = [...new Set(candidateModels)];
+    let lastError = null;
+
+    for (const modelName of modelsToTry) {
+      try {
+        const model = this.genAI.getGenerativeModel({ model: modelName });
+        const result = await model.generateContent(prompt);
+        const response = await result.response;
+        return response.text();
+      } catch (error) {
+        lastError = error;
+        console.warn(`[GeminiService] Model ${modelName} failed (${error.status || error.message}). Trying fallback model...`);
+      }
+    }
+
+    throw lastError || new Error('All Gemini models failed to generate content');
+  }
+
+  async chat(message, context = '') {
+    this.ensureInitialized();
+    const prompt = `${context}User question: ${message}
+
+Please provide a helpful, friendly, and engaging response about books, reading habits, authors, or literary recommendations. Keep it conversational.`;
+
+    try {
+      return await this.generateText(prompt);
+    } catch (error) {
+      console.error('Error during AI chat:', error);
+      return "I'm having a little trouble connecting to my full book knowledge right now due to high server demand. Here are a few timeless recommendations while we wait: if you love fiction, check out 'The Midnight Library' by Matt Haig; for sci-fi, 'Project Hail Mary' by Andy Weir; or for non-fiction, 'Atomic Habits' by James Clear. Feel free to try asking again in a moment!";
     }
   }
 
@@ -69,9 +108,7 @@ Please provide 5 book recommendations in this exact JSON format:
 Focus on books that match their reading patterns and introduce them to new but related genres or authors.
 `;
 
-      const result = await this.model.generateContent(prompt);
-      const response = await result.response;
-      const text = response.text();
+      const text = await this.generateText(prompt);
       
       // Try to parse JSON from the response
       const jsonMatch = text.match(/\{[\s\S]*\}/);
@@ -122,9 +159,7 @@ Please provide reading insights in this JSON format:
 Be encouraging and provide actionable insights based on their reading data.
 `;
 
-      const result = await this.model.generateContent(prompt);
-      const response = await result.response;
-      const text = response.text();
+      const text = await this.generateText(prompt);
       
       const jsonMatch = text.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
@@ -161,9 +196,7 @@ Please provide a summary in this JSON format:
 Keep it concise and helpful for someone who has read or is reading the book.
 `;
 
-      const result = await this.model.generateContent(prompt);
-      const response = await result.response;
-      const text = response.text();
+      const text = await this.generateText(prompt);
       
       const jsonMatch = text.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
@@ -210,9 +243,7 @@ Please suggest reading goals in this JSON format:
 Be realistic and encouraging based on their current reading pace.
 `;
 
-      const result = await this.model.generateContent(prompt);
-      const response = await result.response;
-      const text = response.text();
+      const text = await this.generateText(prompt);
       
       const jsonMatch = text.match(/\{[\s\S]*\}/);
       if (jsonMatch) {

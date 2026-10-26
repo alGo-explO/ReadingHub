@@ -1,8 +1,11 @@
-// server.js (ES module)
+import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
-import { PrismaClient } from '@prisma/client';
+import compression from 'compression';
+import helmet from 'helmet';
+import { rateLimit } from 'express-rate-limit';
+import prisma from './lib/prisma.js';
+import { getAllowedOrigins, validateEnvironment } from './config/env.js';
 import authRoutes from './routes/auth.js';
 import bookRoutes from './routes/books.js';
 import analyticsRoutes from './routes/analytics.js';
@@ -10,41 +13,57 @@ import readingSessionRoutes from './routes/readingSessions.js';
 import collectionRoutes from './routes/collections.js';
 import aiRoutes from './routes/ai.js';
 
-dotenv.config();
-const prisma = new PrismaClient();
-
 const app = express();
-const PORT = process.env.PORT || 5001;
+const isProduction = process.env.NODE_ENV === 'production';
+const allowedOrigins = getAllowedOrigins();
 
-// Simple CORS configuration
-const corsOptions = {
-  origin: [
-    'https://capstone-sem3-kappa.vercel.app',
-    'https://captoneproject-one.vercel.app',
-    'https://readinghubfrontend.vercel.app',
-    'https://readinghubfrontend-le6jhs2vk-sambhav-kumars-projects-6a95d468.vercel.app',
-    'https://cap-stone-3rd-sem.vercel.app',
-    'http://localhost:3000',
-    'http://localhost:3001',
-    'http://localhost:5173'
-  ],
+app.disable('x-powered-by');
+if (isProduction) app.set('trust proxy', 1);
+
+app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
+app.use(compression());
+app.use(cors({
+  origin(origin, callback) {
+    if (!origin || allowedOrigins.has(origin.replace(/\/$/, ''))) {
+      return callback(null, true);
+    }
+    return callback(Object.assign(new Error('Origin is not allowed'), { status: 403 }));
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-};
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  maxAge: 86400
+}));
+app.use(express.json({ limit: '100kb', strict: true }));
 
-app.use(cors(corsOptions));
-
-// Parse JSON bodies
-app.use(express.json({ limit: '10mb' }));
-
-// Simple request logger
-app.use((req, res, next) => {
-  console.log(`${req.method} ${req.path}`);
-  next();
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 300,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Please try again later.' }
+});
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,
+  message: { error: 'Too many authentication attempts. Please try again later.' }
+});
+const aiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 30,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  message: { error: 'AI request limit reached. Please try again later.' }
 });
 
-// Routes
+app.use('/api', apiLimiter);
+app.use('/api/auth/login', authLimiter);
+app.use('/api/auth/signup', authLimiter);
+app.use('/api/ai', aiLimiter);
+
 app.use('/api/auth', authRoutes);
 app.use('/api/books', bookRoutes);
 app.use('/api/analytics', analyticsRoutes);
@@ -52,63 +71,76 @@ app.use('/api/reading-sessions', readingSessionRoutes);
 app.use('/api/collections', collectionRoutes);
 app.use('/api/ai', aiRoutes);
 
-// Health check
-app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'OK', 
-    message: 'ReadingHub API is running',
-    cors: 'enabled',
-    origin: req.headers.origin || 'none',
-    timestamp: new Date().toISOString()
-  });
+app.get('/health', (_req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// CORS test endpoint
-app.get('/cors-test', (req, res) => {
-  res.json({
-    message: 'CORS is working!',
-    origin: req.headers.origin || 'none',
-    method: req.method,
-    timestamp: new Date().toISOString()
-  });
-});
-
-// Error handler (CORS errors may surface here)
-app.use((err, req, res, next) => {
-  console.error('Unhandled error:', err?.message || err);
-  // If the error is CORS rejection from our origin callback, return 403 with message
-  if (err && err.message && err.message.includes('Not allowed by CORS')) {
-    return res.status(403).json({ error: 'CORS blocked this origin' });
-  }
-  res.status(500).json({ error: 'Internal server error' });
-});
-
-// Start server
-const server = app.listen(PORT, async () => {
-  console.log(`🚀 ReadingHub Server running on port ${PORT}`);
-  console.log(`📚 API Health: http://localhost:${PORT}/health`);
-  console.log(`🔑 JWT_SECRET configured:`, !!process.env.JWT_SECRET);
-  console.log(`🗄️ DATABASE_URL configured:`, !!process.env.DATABASE_URL);
-  console.log(`🌍 NODE_ENV:`, process.env.NODE_ENV);
+app.get('/ready', async (_req, res) => {
   try {
-    await prisma.$connect();
-    console.log('✅ Database connected successfully');
+    await prisma.$queryRaw`SELECT 1`;
+    res.json({ status: 'ready' });
   } catch (error) {
-    console.error('❌ Database connection failed:', error?.message || error);
-    console.log('⚠️ Server will continue without database connection');
+    console.error('Readiness check failed:', error.message);
+    res.status(503).json({ status: 'unavailable' });
   }
 });
 
-server.on('error', (error) => {
-  console.error('Server error:', error);
+app.use((_req, res) => {
+  res.status(404).json({ error: 'Endpoint not found' });
+});
+
+app.use((err, _req, res, _next) => {
+  const status = err.status || (err.type === 'entity.parse.failed' ? 400 : 500);
+  if (status >= 500) console.error('Unhandled request error:', err);
+  res.status(status).json({
+    error: status === 400 ? 'Invalid JSON request body'
+      : status === 403 ? 'Origin is not allowed'
+        : status === 413 ? 'Request body is too large'
+          : 'Internal server error'
+  });
+});
+
+let server;
+let shuttingDown = false;
+
+async function startServer() {
+  const { port } = validateEnvironment();
+  await prisma.$connect();
+
+  server = app.listen(port, () => {
+    console.log(`ReadingHub API listening on port ${port} (${process.env.NODE_ENV || 'development'})`);
+  });
+
+  server.on('error', (error) => {
+    console.error('Server error:', error);
+    process.exit(1);
+  });
+}
+
+async function gracefulShutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`${signal} received; shutting down`);
+
+  const forceExit = setTimeout(() => {
+    console.error('Graceful shutdown timed out');
+    process.exit(1);
+  }, 10000);
+  forceExit.unref();
+
+  if (server) await new Promise((resolve) => server.close(resolve));
+  await prisma.$disconnect();
+  clearTimeout(forceExit);
+  process.exit(0);
+}
+
+process.on('SIGTERM', () => void gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => void gracefulShutdown('SIGINT'));
+
+startServer().catch(async (error) => {
+  console.error('Failed to start server:', error.message);
+  await prisma.$disconnect().catch(() => {});
   process.exit(1);
 });
 
-process.on('SIGTERM', async () => {
-  console.log('SIGTERM received, shutting down gracefully');
-  await prisma.$disconnect();
-  server.close(() => {
-    console.log('Server closed');
-    process.exit(0);
-  });
-});
+export default app;

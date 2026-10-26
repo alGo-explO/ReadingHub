@@ -1,31 +1,16 @@
 import express from 'express';
-import { PrismaClient } from '@prisma/client';
-import jwt from 'jsonwebtoken';
+import prisma from '../lib/prisma.js';
+import authenticateToken from '../middleware/auth.js';
 
 const router = express.Router();
-const prisma = new PrismaClient();
-
-
-const authenticateToken = (req, res, next) => {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
-
-  if (!token) {
-    return res.status(401).json({ error: 'Access token required' });
-  }
-
-  jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
-    if (err) return res.status(403).json({ error: 'Invalid token' });
-    req.userId = user.userId;
-    next();
-  });
-};
 
 
 router.get('/', authenticateToken, async (req, res) => {
   try {
     const { page = 1, limit = 20 } = req.query;
-    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const parsedPage = Math.max(1, Number.parseInt(page, 10) || 1);
+    const parsedLimit = Math.min(100, Math.max(1, Number.parseInt(limit, 10) || 20));
+    const skip = (parsedPage - 1) * parsedLimit;
 
     const sessions = await prisma.readingSession.findMany({
       where: { userId: req.userId },
@@ -36,7 +21,7 @@ router.get('/', authenticateToken, async (req, res) => {
       },
       orderBy: { date: 'desc' },
       skip,
-      take: parseInt(limit)
+      take: parsedLimit
     });
 
     res.json(sessions);
@@ -51,11 +36,14 @@ router.post('/', authenticateToken, async (req, res) => {
   try {
     const { bookId, startPage, endPage, duration, notes, mood, location } = req.body;
 
-    if (!bookId || !startPage || !endPage || !duration) {
+    const parsedStart = Number(startPage);
+    const parsedEnd = Number(endPage);
+    const parsedDuration = Number(duration);
+
+    if (!bookId || !Number.isInteger(parsedStart) || !Number.isInteger(parsedEnd) || !Number.isInteger(parsedDuration)) {
       return res.status(400).json({ error: 'Book, pages, and duration are required' });
     }
-
-    if (endPage <= startPage) {
+    if (parsedStart < 0 || parsedEnd <= parsedStart || parsedDuration < 1 || parsedDuration > 1440) {
       return res.status(400).json({ error: 'End page must be greater than start page' });
     }
 
@@ -67,32 +55,38 @@ router.post('/', authenticateToken, async (req, res) => {
     if (!book) {
       return res.status(404).json({ error: 'Book not found' });
     }
+    if (book.pages && parsedEnd > book.pages) {
+      return res.status(400).json({ error: 'End page cannot exceed the book page count' });
+    }
 
-    const session = await prisma.readingSession.create({
-      data: {
-        bookId,
-        userId: req.userId,
-        startPage: parseInt(startPage),
-        endPage: parseInt(endPage),
-        duration: parseInt(duration),
-        notes,
-        mood,
-        location
-      },
-      include: {
-        book: {
-          select: { id: true, title: true, author: true }
+    const session = await prisma.$transaction(async (tx) => {
+      const createdSession = await tx.readingSession.create({
+        data: {
+          bookId,
+          userId: req.userId,
+          startPage: parsedStart,
+          endPage: parsedEnd,
+          duration: parsedDuration,
+          notes: typeof notes === 'string' ? notes.trim().slice(0, 2000) || null : null,
+          mood: typeof mood === 'string' ? mood.trim().slice(0, 50) || null : null,
+          location: typeof location === 'string' ? location.trim().slice(0, 150) || null : null
+        },
+        include: {
+          book: {
+            select: { id: true, title: true, author: true }
+          }
         }
-      }
-    });
+      });
 
+      await tx.book.update({
+        where: { id: bookId },
+        data: {
+          currentPage: Math.max(book.currentPage, parsedEnd),
+          ...(book.status === 'TO_READ' && { status: 'IN_PROGRESS', dateStarted: new Date() })
+        }
+      });
 
-    await prisma.book.update({
-      where: { id: bookId },
-      data: { 
-        currentPage: Math.max(book.currentPage, parseInt(endPage)),
-        ...(book.status === 'TO_READ' && { status: 'IN_PROGRESS', dateStarted: new Date() })
-      }
+      return createdSession;
     });
 
     res.status(201).json(session);

@@ -1,262 +1,330 @@
-# ReadingHub – Personal Digital Library Manager
+# ReadingHub
 
-A full-stack web application for managing your personal reading life. Track books, log reading sessions, organize collections, and get AI-powered insights and recommendations — all in one place.
-
-## Live Demo
-
-**Frontend:** [https://capstone-sem3-kappa.vercel.app](https://capstone-sem3-kappa.vercel.app)  
-**Backend API:** [https://capstone-sem3-12k8.onrender.com](https://capstone-sem3-12k8.onrender.com)
-
----
-
-## Tech Stack
-
-| Layer          | Technology                                      |
-| -------------- | ----------------------------------------------- |
-| Frontend       | React 18, React Router v6, Tailwind CSS, Vite   |
-| Backend        | Node.js, Express.js (ES Modules)                |
-| Database       | Neon (PostgreSQL), Prisma ORM                   |
-| AI             | Google Gemini API (`@google/generative-ai`)     |
-| Authentication | JWT (JSON Web Tokens)                           |
-| Deployment     | Frontend: Vercel, Backend: Render               |
-
----
+ReadingHub is a full-stack personal library and reading tracker. It lets readers manage books, record reading sessions, organize collections, review progress, and receive AI-assisted recommendations and insights.
 
 ## Features
 
-### Book Management (CRUD)
-- Add books with title, author, genre, pages, ISBN, publisher, published year, language, format, and priority
-- Five reading statuses: `To Read`, `In Progress`, `Completed`, `Did Not Finish`, `On Hold`
-- Four book formats: `Physical`, `eBook`, `Audiobook`, `PDF`
-- Edit all book details including reading progress (current page)
-- Delete books with cascading cleanup of related data
-- Personal notes, reviews, and 1–5 star ratings per book
-- Automatic date tracking: date added, date started, date finished
+- Secure account registration and JWT authentication
+- Personal profile, avatar, privacy setting, and annual reading goal
+- Book creation, editing, deletion, search, filtering, sorting, and pagination
+- Five reading states: want to read, in progress, completed, on hold, and did not finish
+- Reading-session tracking with pages, duration, mood, location, and notes
+- Custom book collections
+- Reading analytics, streaks, genre distribution, and goal progress
+- Gemini-powered recommendations, summaries, goals, insights, and book chat
+- Book discovery through Google Books with an automatic Open Library fallback
+- Responsive React interface
 
-### Search, Filter & Sort
-- Search by title or author (case-insensitive)
-- Filter by reading status and genre
-- Sort by date added, title, author, or date finished
-- Pagination with configurable page size
+## Technology
 
-### Reading Sessions
-- Log individual reading sessions with start page, end page, and duration
-- Optional mood and location tracking per session
-- Automatically updates the book's current page when a session is logged
-- Auto-transitions a book from `To Read` to `In Progress` on first session
+| Area | Technology |
+| --- | --- |
+| Frontend | React 18, React Router 7, Vite 8, Tailwind CSS 4 |
+| Backend | Node.js, Express |
+| Database | PostgreSQL, Prisma ORM |
+| Authentication | JSON Web Tokens, bcrypt |
+| AI | Google Gemini |
+| Book search | Google Books, Open Library fallback |
+| Hosting | Vercel frontend, Render backend, Neon PostgreSQL |
 
-### Collections
-- Create named collections with custom colors and descriptions
-- Organize books into multiple collections
-- Optional public/private visibility
+## Project structure
 
-### Analytics Dashboard
-- Reading stats by timeframe: month, quarter, or year
-- Pages read, reading time (hours), books completed
-- Reading streak and longest streak tracking
-- Average pages per day and average session duration
-- Yearly reading goal progress
-- Genre distribution breakdown
-- Monthly reading progress chart
-
-### AI Insights (Google Gemini)
-- Personalized book recommendations based on your library
-- Reading pattern analysis and habit insights
-- Book summaries with context from your personal notes
-- Reading goal suggestions tailored to your history
-- Conversational AI chat about books — ask anything about a specific book or your library in general
-- Graceful fallbacks when AI is unavailable
-
-### Authentication & Profiles
-- JWT-based signup and login
-- User profile with bio, location, website, and yearly reading goal
-- All data is scoped per user — isolated and private
-
----
-
-## API Reference
-
-### Auth
-
-| Endpoint              | Method | Auth | Description         |
-| --------------------- | ------ | ---- | ------------------- |
-| `/api/auth/signup`    | POST   | —    | Register new user   |
-| `/api/auth/login`     | POST   | —    | Login, get JWT      |
-| `/api/auth/me`        | GET    | ✓    | Get current user    |
-| `/api/auth/profile`   | GET    | ✓    | Get user profile    |
-| `/api/auth/profile`   | PUT    | ✓    | Update profile      |
-
-### Books
-
-| Endpoint               | Method | Auth | Description                            |
-| ---------------------- | ------ | ---- | -------------------------------------- |
-| `/api/books`           | GET    | ✓    | List books (search, filter, sort, page)|
-| `/api/books/:id`       | GET    | ✓    | Get single book                        |
-| `/api/books`           | POST   | ✓    | Add new book                           |
-| `/api/books/:id`       | PUT    | ✓    | Update book                            |
-| `/api/books/:id`       | DELETE | ✓    | Delete book                            |
-| `/api/books/stats/overview` | GET | ✓  | Quick count stats                      |
-
-### Reading Sessions
-
-| Endpoint                      | Method | Auth | Description                  |
-| ----------------------------- | ------ | ---- | ---------------------------- |
-| `/api/reading-sessions`       | GET    | ✓    | List sessions (paginated)    |
-| `/api/reading-sessions`       | POST   | ✓    | Log new session              |
-| `/api/reading-sessions/stats` | GET    | ✓    | Aggregate session stats      |
-| `/api/reading-sessions/:id`   | DELETE | ✓    | Delete session               |
-
-### Collections
-
-| Endpoint                | Method | Auth | Description         |
-| ----------------------- | ------ | ---- | ------------------- |
-| `/api/collections`      | GET    | ✓    | List collections    |
-| `/api/collections`      | POST   | ✓    | Create collection   |
-| `/api/collections/:id`  | DELETE | ✓    | Delete collection   |
-
-### Analytics
-
-| Endpoint                          | Method | Auth | Description                |
-| --------------------------------- | ------ | ---- | -------------------------- |
-| `/api/analytics/stats`            | GET    | ✓    | Reading stats by timeframe |
-| `/api/analytics/reading-progress` | GET    | ✓    | Progress chart data        |
-| `/api/analytics/genres`           | GET    | ✓    | Genre distribution         |
-
-### AI
-
-| Endpoint                    | Method | Auth | Description                      |
-| --------------------------- | ------ | ---- | -------------------------------- |
-| `/api/ai/recommendations`   | GET    | ✓    | Personalized book recommendations|
-| `/api/ai/insights`          | GET    | ✓    | Reading pattern insights         |
-| `/api/ai/summary/:bookId`   | GET    | ✓    | AI summary for a specific book   |
-| `/api/ai/goals`             | GET    | ✓    | Suggested reading goals          |
-| `/api/ai/chat`              | POST   | ✓    | Conversational AI chat           |
-
----
-
-## Project Structure
-
-```
-capStone_3rdSem/
+```text
+readinghub/
+├── backend/
+│   ├── config/              # Runtime environment validation
+│   ├── lib/                 # Shared Prisma client
+│   ├── middleware/          # Authentication middleware
+│   ├── prisma/              # Schema and database migrations
+│   ├── routes/              # REST API routes
+│   ├── services/            # Gemini and book-search integrations
+│   ├── .env.example
+│   ├── render.yaml
+│   └── server.js
 ├── frontend/
 │   ├── src/
-│   │   ├── components/       # Navbar, BookCard, BookSearch
-│   │   ├── pages/            # Auth, Dashboard, Library, AddBook, EditBook,
-│   │   │                     # BookDetails, Collections, ReadingSessions,
-│   │   │                     # Analytics, AIInsights, Profile, SearchBooks
-│   │   ├── config.js         # API URL config (dev/prod)
-│   │   ├── App.jsx           # Routes and auth state
-│   │   └── main.jsx
-│   ├── vite.config.js
-│   └── tailwind.config.js
-│
-└── backend/
-    ├── routes/
-    │   ├── auth.js
-    │   ├── books.js
-    │   ├── collections.js
-    │   ├── readingSessions.js
-    │   ├── analytics.js
-    │   └── ai.js
-    ├── services/
-    │   └── geminiService.js  # Google Gemini AI integration
-    ├── prisma/
-    │   ├── schema.prisma     # Full data model
-    │   └── migrations/       # 4 migration history files
-    └── server.js
+│   │   ├── components/
+│   │   ├── pages/
+│   │   ├── App.jsx
+│   │   └── config.js
+│   ├── .env.example
+│   └── vite.config.js
+├── .github/workflows/ci.yml
+└── DEPLOYMENT.md
 ```
 
----
+## Requirements
 
-## Local Setup
+- Node.js 20.19 or newer
+- npm
+- A PostgreSQL database
+- A Gemini API key for AI features
+- A Google Books API key is optional
 
-### Prerequisites
-- Node.js 18+
-- A [Neon](https://neon.tech) PostgreSQL database
-- A [Google AI Studio](https://aistudio.google.com) API key for Gemini
+## Local setup
 
-### 1. Clone the repo
+### 1. Clone the repository
 
 ```bash
-git clone https://github.com/your-username/capStone_3rdSem.git
-cd capStone_3rdSem
+git clone <your-repository-url>
+cd readinghub
 ```
 
-### 2. Backend
+### 2. Configure the backend
 
 ```bash
 cd backend
+cp .env.example .env
 npm install
 ```
 
-Create a `.env` file:
+Update `backend/.env`:
 
 ```env
-DATABASE_URL="postgresql://user:password@host/dbname?sslmode=require"
-JWT_SECRET="your-secure-random-secret"
-PORT=5001
 NODE_ENV=development
-GEMINI_API_KEY="your-gemini-api-key"
+PORT=5001
+DATABASE_URL="postgresql://user:password@host/database?sslmode=require"
+JWT_SECRET="replace-with-a-long-random-secret"
+JWT_EXPIRES_IN=7d
+JWT_ISSUER=readinghub-api
+JWT_AUDIENCE=readinghub-web
+FRONTEND_URL=http://localhost:3000
+GEMINI_API_KEY=your-gemini-api-key
+GEMINI_MODEL=gemini-2.5-flash
+
+# Optional: Google Books is preferred when this is configured.
+# Open Library is used automatically when it is omitted or quota-limited.
+GOOGLE_BOOKS_API_KEY=
 ```
 
-Run migrations and start:
+Generate a secure JWT secret with:
+
+```bash
+openssl rand -base64 48
+```
+
+Apply database migrations and start the API:
 
 ```bash
 npx prisma migrate deploy
-node server.js
+npm run dev
 ```
 
-Backend runs on `http://localhost:5001`.
+The API runs at `http://localhost:5001`.
 
-### 3. Frontend
+Verify it with:
+
+```text
+http://localhost:5001/health
+http://localhost:5001/ready
+```
+
+### 3. Configure the frontend
+
+In a second terminal:
 
 ```bash
 cd frontend
+cp .env.example .env
 npm install
 npm run dev
 ```
 
-Frontend runs on `http://localhost:3000` (or the next available port).
+The frontend environment file should contain:
 
----
+```env
+VITE_API_URL=http://localhost:5001
+```
 
-## Data Model
+The frontend runs at `http://localhost:3000`.
 
-The Prisma schema defines these models:
+> Variables beginning with `VITE_` are included in browser code. Never store secrets in a frontend environment variable.
 
-- **User** – accounts, profile, reading goal, follow relationships
-- **Book** – full book metadata, reading status, progress, notes, reviews, ratings
-- **ReadingSession** – individual reading logs with pages, duration, mood, location
-- **Collection** – named book groupings with color and visibility
-- **BookCollection** – many-to-many join between books and collections
-- **Bookmark** – page bookmarks with optional notes
-- **Quote** – saved quotes from books
-- **Review** – structured reviews with rating, title, content
-- **Follow** – user follow relationships
+## Useful commands
 
----
+### Backend
 
-## Deployment
+```bash
+cd backend
+npm run dev                 # Start the API
+npm run build               # Generate the Prisma client
+npx prisma validate         # Validate the Prisma schema
+npx prisma migrate deploy   # Apply committed migrations
+npx prisma studio           # Open the database browser
+npm audit                   # Check dependencies
+```
 
-| Component | Platform  | Notes                              |
-| --------- | --------- | ---------------------------------- |
-| Frontend  | Vercel    | Auto-deploys from main branch      |
-| Backend   | Render    | Web service, port set automatically|
-| Database  | Neon      | Serverless PostgreSQL              |
+### Frontend
 
-Set these environment variables on Render:
-- `DATABASE_URL` — Neon connection string
-- `JWT_SECRET` — secure random string (32+ chars)
-- `GEMINI_API_KEY` — Google AI key
-- `NODE_ENV=production`
+```bash
+cd frontend
+npm run dev                 # Start Vite development server
+npm run build               # Create production build
+npm run preview             # Preview production build
+npm audit                   # Check dependencies
+```
 
----
+## API overview
 
-## Credits
+Authenticated endpoints expect this header:
 
-Developed by **Sambhav Kumar**  
-Stack: React, Node.js, Express, Prisma, Neon PostgreSQL, Google Gemini AI
+```http
+Authorization: Bearer <token>
+```
+
+### Authentication and profile
+
+| Method | Endpoint | Description |
+| --- | --- | --- |
+| `POST` | `/api/auth/signup` | Create an account |
+| `POST` | `/api/auth/login` | Log in and receive a token |
+| `GET` | `/api/auth/me` | Get the current user |
+| `GET` | `/api/auth/profile` | Get the complete profile |
+| `PUT` | `/api/auth/profile` | Update the profile and reading goal |
+
+### Books
+
+| Method | Endpoint | Description |
+| --- | --- | --- |
+| `GET` | `/api/books` | List and filter books |
+| `GET` | `/api/books/search?q=...` | Search external book catalogs |
+| `GET` | `/api/books/:id` | Get a book |
+| `POST` | `/api/books` | Add a book |
+| `PUT` | `/api/books/:id` | Update a book |
+| `DELETE` | `/api/books/:id` | Delete a book |
+| `GET` | `/api/books/stats/overview` | Get book totals |
+
+### Reading data
+
+| Method | Endpoint | Description |
+| --- | --- | --- |
+| `GET` | `/api/reading-sessions` | List reading sessions |
+| `POST` | `/api/reading-sessions` | Record a reading session |
+| `DELETE` | `/api/reading-sessions/:id` | Delete a session |
+| `GET` | `/api/collections` | List collections |
+| `POST` | `/api/collections` | Create a collection |
+| `DELETE` | `/api/collections/:id` | Delete a collection |
+| `GET` | `/api/analytics/stats` | Get reading statistics |
+| `GET` | `/api/analytics/reading-progress` | Get progress history |
+| `GET` | `/api/analytics/genres` | Get genre distribution |
+
+### AI
+
+| Method | Endpoint | Description |
+| --- | --- | --- |
+| `GET` | `/api/ai/recommendations` | Generate book recommendations |
+| `GET` | `/api/ai/insights` | Analyze reading patterns |
+| `GET` | `/api/ai/summary/:bookId` | Generate a book summary |
+| `GET` | `/api/ai/goals` | Suggest reading goals |
+| `POST` | `/api/ai/chat` | Chat about books and reading |
+
+## Production deployment
+
+The recommended order is:
+
+1. Create a Neon PostgreSQL database.
+2. Deploy the backend to Render.
+3. Deploy the frontend to Vercel.
+4. Update the backend's allowed frontend origin.
+
+### Render backend
+
+Create a Node Web Service with:
+
+```text
+Root Directory: backend
+Build Command: npm ci && npx prisma migrate deploy
+Start Command: npm start
+Health Check Path: /ready
+```
+
+Configure:
+
+```env
+NODE_ENV=production
+DATABASE_URL=<neon-connection-string>
+JWT_SECRET=<32-or-more-random-characters>
+FRONTEND_URL=https://your-frontend.vercel.app
+GEMINI_API_KEY=<gemini-key>
+GEMINI_MODEL=gemini-2.5-flash
+GOOGLE_BOOKS_API_KEY=<optional-google-books-key>
+```
+
+Render supplies `PORT`; do not hardcode it.
+
+### Vercel frontend
+
+Import the same repository and configure:
+
+```text
+Root Directory: frontend
+Framework: Vite
+Build Command: npm run build
+Output Directory: dist
+```
+
+Set this for Production and Preview:
+
+```env
+VITE_API_URL=https://your-backend.onrender.com
+```
+
+After adding or changing `VITE_API_URL`, redeploy the frontend because Vite reads this value during the build.
+
+This repository does not include a `vercel.json` file. The application uses React Router's browser history mode, so opening a nested route such as `/profile` directly may return a Vercel 404 unless an SPA rewrite is configured. Navigation from the application root continues to work normally.
+
+See [DEPLOYMENT.md](./DEPLOYMENT.md) for a more detailed deployment checklist.
+
+## Production safeguards
+
+- Exact CORS origin allowlisting
+- Helmet security headers on the API
+- Global, authentication, and AI-specific rate limits
+- JSON request-size limits
+- JWT algorithm, issuer, audience, and expiration validation
+- Centralized Prisma connection handling
+- Input validation and user-scoped database access
+- Database-aware readiness checks
+- Graceful server shutdown
+- Automated frontend and backend builds through GitHub Actions
+
+## Troubleshooting
+
+### The backend fails during startup
+
+Check that `DATABASE_URL`, `JWT_SECRET`, and production `FRONTEND_URL` are configured. Production JWT secrets must contain at least 32 characters.
+
+### The frontend build reports `VITE_API_URL is required`
+
+Set `VITE_API_URL` in Vercel or in `frontend/.env` for a local production build.
+
+### Refreshing a frontend page returns a Vercel 404
+
+The frontend uses client-side routes. Configure a Vercel SPA rewrite that sends unmatched paths to `/index.html`, or open the application from its root URL before navigating.
+
+### The browser reports a CORS error
+
+Set Render's `FRONTEND_URL` to the exact frontend origin without a trailing slash. Put additional exact origins in `ALLOWED_ORIGINS`, separated by commas.
+
+### Book search fails
+
+The backend automatically falls back to Open Library when Google Books is unavailable. Check the Render logs and make sure outbound HTTPS traffic is available. A Google Books key is optional.
+
+### AI features show fallback content
+
+Verify `GEMINI_API_KEY` and `GEMINI_MODEL`. The rest of the application continues working when Gemini is temporarily unavailable.
+
+### Existing sessions become invalid after a JWT change
+
+Users must log in again after `JWT_SECRET`, `JWT_ISSUER`, or `JWT_AUDIENCE` changes.
+
+## Security notes
+
+- Never commit `.env` files, database URLs, JWT secrets, or API keys.
+- Rotate credentials immediately if they are exposed.
+- Use HTTPS origins in production.
+- Keep dependency audits and database backups in the deployment routine.
 
 ## License
 
-Open for educational and personal use.
+Add a `LICENSE` file before distributing the project publicly under a specific open-source license.

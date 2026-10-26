@@ -35,6 +35,9 @@ function Library() {
         const data = await response.json();
         setBooks(data.books);
         setPagination(data.pagination);
+      } else if (response.status === 401 || response.status === 403) {
+        localStorage.removeItem('token');
+        window.location.href = '/login';
       }
     } catch (error) {
       console.error('Error fetching books:', error);

@@ -1,59 +1,24 @@
 import express from 'express';
-import { PrismaClient } from '@prisma/client';
-import jwt from 'jsonwebtoken';
+import prisma from '../lib/prisma.js';
+import authenticateToken from '../middleware/auth.js';
+import { searchBooks } from '../services/bookSearchService.js';
 
 const router = express.Router();
-const prisma = new PrismaClient();
 
+const validStatuses = ['TO_READ', 'IN_PROGRESS', 'COMPLETED', 'DNF', 'ON_HOLD'];
+const validFormats = ['PHYSICAL', 'EBOOK', 'AUDIOBOOK', 'PDF'];
+const validPriorities = ['LOW', 'MEDIUM', 'HIGH', 'URGENT'];
+const validSortFields = ['dateAdded', 'dateFinished', 'title', 'author', 'updatedAt'];
 
-const authenticateToken = (req, res, next) => {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
-
-  if (!token) {
-    return res.status(401).json({ error: 'Access token required' });
-  }
-
-  if (!process.env.JWT_SECRET) {
-    console.error('JWT_SECRET environment variable is not set');
-    return res.status(500).json({ error: 'Server configuration error' });
-  }
-
-  jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
-    if (err) {
-      console.error('JWT verification error:', err.message);
-      return res.status(403).json({ error: 'Invalid token' });
-    }
-    console.log('Decoded token payload:', user);
-    req.userId = user.userId;
-    next();
-  });
-};
-
-
-router.get('/test-auth', authenticateToken, async (req, res) => {
+const isValidCoverUrl = (value) => {
+  if (!value) return true;
+  if (typeof value !== 'string' || value.length > 2000) return false;
   try {
-    console.log('Testing auth for user ID:', req.userId);
-    
-    const user = await prisma.user.findUnique({
-      where: { id: req.userId },
-      select: { id: true, email: true, name: true }
-    });
-
-    if (!user) {
-      return res.status(404).json({ error: 'User not found in database' });
-    }
-
-    res.json({ 
-      message: 'Authentication successful',
-      userId: req.userId,
-      user: user
-    });
-  } catch (error) {
-    console.error('Auth test error:', error);
-    res.status(500).json({ error: 'Auth test failed' });
+    return new URL(value).protocol === 'https:';
+  } catch (_error) {
+    return false;
   }
-});
+};
 
 
 router.get('/', authenticateToken, async (req, res) => {
@@ -68,7 +33,15 @@ router.get('/', authenticateToken, async (req, res) => {
       limit = 10 
     } = req.query;
 
-    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const parsedPage = Math.max(1, Number.parseInt(page, 10) || 1);
+    const parsedLimit = Math.min(100, Math.max(1, Number.parseInt(limit, 10) || 10));
+    const safeSortBy = validSortFields.includes(sortBy) ? sortBy : 'dateAdded';
+    const safeSortOrder = sortOrder === 'asc' ? 'asc' : 'desc';
+    const skip = (parsedPage - 1) * parsedLimit;
+
+    if (status && !validStatuses.includes(status)) {
+      return res.status(400).json({ error: 'Invalid book status' });
+    }
     
 
     const where = {
@@ -85,33 +58,49 @@ router.get('/', authenticateToken, async (req, res) => {
 
     
     const orderBy = {};
-    orderBy[sortBy] = sortOrder;
+    orderBy[safeSortBy] = safeSortOrder;
 
     const [books, totalCount] = await Promise.all([
       prisma.book.findMany({
         where,
         orderBy,
         skip,
-        take: parseInt(limit),
+        take: parsedLimit,
       }),
       prisma.book.count({ where })
     ]);
 
-    const totalPages = Math.ceil(totalCount / parseInt(limit));
+    const totalPages = Math.ceil(totalCount / parsedLimit);
 
     res.json({
       books,
       pagination: {
-        currentPage: parseInt(page),
+        currentPage: parsedPage,
         totalPages,
         totalCount,
-        hasNext: parseInt(page) < totalPages,
-        hasPrev: parseInt(page) > 1
+        hasNext: parsedPage < totalPages,
+        hasPrev: parsedPage > 1
       }
     });
   } catch (error) {
     console.error('Error fetching books:', error);
     res.status(500).json({ error: 'Failed to fetch books' });
+  }
+});
+
+router.get('/search', authenticateToken, async (req, res) => {
+  const query = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+  if (query.length < 2 || query.length > 200) {
+    return res.status(400).json({ error: 'Search query must be between 2 and 200 characters' });
+  }
+
+  try {
+    const results = await searchBooks(query);
+    res.set('Cache-Control', 'private, max-age=300');
+    res.json(results);
+  } catch (error) {
+    console.error('Book search failed:', error.message);
+    res.status(502).json({ error: 'Book search is temporarily unavailable. Please try again shortly.' });
   }
 });
 
@@ -154,12 +143,20 @@ router.post('/', authenticateToken, async (req, res) => {
       priority = 'MEDIUM'
     } = req.body;
 
-    console.log('Received book data:', req.body);
-    console.log('User ID from token:', req.userId);
-
-  
-    if (!title || !author) {
+    if (typeof title !== 'string' || !title.trim() || typeof author !== 'string' || !author.trim()) {
       return res.status(400).json({ error: 'Title and author are required' });
+    }
+    if (title.trim().length > 300 || author.trim().length > 200) {
+      return res.status(400).json({ error: 'Title or author is too long' });
+    }
+    if (!isValidCoverUrl(coverImage)) {
+      return res.status(400).json({ error: 'Cover image must be a valid HTTPS URL' });
+    }
+    if ((description && (typeof description !== 'string' || description.length > 5000)) ||
+        (publisher && (typeof publisher !== 'string' || publisher.length > 200)) ||
+        (isbn && (typeof isbn !== 'string' || isbn.length > 32)) ||
+        (language && (typeof language !== 'string' || language.length > 100))) {
+      return res.status(400).json({ error: 'One or more book details exceed the allowed length' });
     }
 
 
@@ -168,20 +165,11 @@ router.post('/', authenticateToken, async (req, res) => {
     });
 
     if (!user) {
-      console.error('User not found for ID:', req.userId);
-      console.error('This usually means the JWT token contains a user ID that no longer exists in the database');
       return res.status(401).json({ 
         error: 'User session invalid. Please log in again.',
         code: 'USER_NOT_FOUND'
       });
     }
-
-    console.log('User found:', user.email);
-
-
-    const validStatuses = ['TO_READ', 'IN_PROGRESS', 'COMPLETED', 'DNF', 'ON_HOLD'];
-    const validFormats = ['PHYSICAL', 'EBOOK', 'AUDIOBOOK', 'PDF'];
-    const validPriorities = ['LOW', 'MEDIUM', 'HIGH', 'URGENT'];
 
     if (!validStatuses.includes(status)) {
       return res.status(400).json({ error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` });
@@ -196,16 +184,25 @@ router.post('/', authenticateToken, async (req, res) => {
     }
 
 
+    const parsedPages = pages === undefined || pages === '' ? null : Number(pages);
+    const parsedYear = publishedYear === undefined || publishedYear === '' ? null : Number(publishedYear);
+    if (parsedPages !== null && (!Number.isInteger(parsedPages) || parsedPages < 1 || parsedPages > 100000)) {
+      return res.status(400).json({ error: 'Pages must be a positive whole number' });
+    }
+    if (parsedYear !== null && (!Number.isInteger(parsedYear) || parsedYear < 0 || parsedYear > new Date().getFullYear() + 1)) {
+      return res.status(400).json({ error: 'Published year is invalid' });
+    }
+
     const bookData = {
       title: title.trim(),
       author: author.trim(),
-      genre: Array.isArray(genre) ? genre : [],
-      pages: pages ? parseInt(pages) : null,
+      genre: Array.isArray(genre) ? genre.map(String).map((item) => item.trim()).filter(Boolean).slice(0, 20) : [],
+      pages: parsedPages,
       status,
       userId: req.userId,
       isbn: isbn || null,
       publisher: publisher || null,
-      publishedYear: publishedYear ? parseInt(publishedYear) : null,
+      publishedYear: parsedYear,
       language: language || 'English',
       description: description || null,
       coverImage: coverImage || null,
@@ -215,17 +212,14 @@ router.post('/', authenticateToken, async (req, res) => {
       ...(status === 'COMPLETED' && { 
         dateStarted: new Date(), 
         dateFinished: new Date(),
-        currentPage: pages ? parseInt(pages) : 0
+        currentPage: parsedPages || 0
       })
     };
-
-    console.log('Creating book with data:', bookData);
 
     const book = await prisma.book.create({
       data: bookData
     });
 
-    console.log('Book created successfully:', book.id);
     res.status(201).json(book);
   } catch (error) {
     console.error('Error creating book:', error);
@@ -262,22 +256,58 @@ router.put('/:id', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: 'Book not found' });
     }
 
+    if (status !== undefined && !validStatuses.includes(status)) {
+      return res.status(400).json({ error: 'Invalid book status' });
+    }
+    if (format !== undefined && !validFormats.includes(format)) {
+      return res.status(400).json({ error: 'Invalid book format' });
+    }
+    if (priority !== undefined && !validPriorities.includes(priority)) {
+      return res.status(400).json({ error: 'Invalid book priority' });
+    }
+    if (title !== undefined && (typeof title !== 'string' || !title.trim() || title.trim().length > 300)) {
+      return res.status(400).json({ error: 'Title is invalid' });
+    }
+    if (author !== undefined && (typeof author !== 'string' || !author.trim() || author.trim().length > 200)) {
+      return res.status(400).json({ error: 'Author is invalid' });
+    }
+    if (coverImage !== undefined && !isValidCoverUrl(coverImage)) {
+      return res.status(400).json({ error: 'Cover image must be a valid HTTPS URL' });
+    }
+
+    const parsedPages = pages === undefined || pages === '' ? null : Number(pages);
+    const parsedCurrentPage = currentPage === undefined ? undefined : Number(currentPage);
+    const parsedRating = rating === undefined || rating === '' ? null : Number(rating);
+    const parsedYear = publishedYear === undefined || publishedYear === '' ? null : Number(publishedYear);
+    if (pages !== undefined && parsedPages !== null && (!Number.isInteger(parsedPages) || parsedPages < 1 || parsedPages > 100000)) {
+      return res.status(400).json({ error: 'Pages must be a positive whole number' });
+    }
+    if (parsedCurrentPage !== undefined && (!Number.isInteger(parsedCurrentPage) || parsedCurrentPage < 0 || (parsedPages || existingBook.pages) && parsedCurrentPage > (parsedPages || existingBook.pages))) {
+      return res.status(400).json({ error: 'Current page is invalid' });
+    }
+    if (rating !== undefined && parsedRating !== null && (!Number.isInteger(parsedRating) || parsedRating < 1 || parsedRating > 5)) {
+      return res.status(400).json({ error: 'Rating must be between 1 and 5' });
+    }
+    if (publishedYear !== undefined && parsedYear !== null && (!Number.isInteger(parsedYear) || parsedYear < 0 || parsedYear > new Date().getFullYear() + 1)) {
+      return res.status(400).json({ error: 'Published year is invalid' });
+    }
+
 
     const updateData = {};
     
   
-    if (title !== undefined) updateData.title = title;
-    if (author !== undefined) updateData.author = author;
-    if (genre !== undefined) updateData.genre = genre;
-    if (pages !== undefined) updateData.pages = pages ? parseInt(pages) : null;
+    if (title !== undefined) updateData.title = title.trim();
+    if (author !== undefined) updateData.author = author.trim();
+    if (genre !== undefined) updateData.genre = Array.isArray(genre) ? genre.map(String).map((item) => item.trim()).filter(Boolean).slice(0, 20) : [];
+    if (pages !== undefined) updateData.pages = parsedPages;
     if (status !== undefined) updateData.status = status;
-    if (currentPage !== undefined) updateData.currentPage = parseInt(currentPage) || 0;
+    if (currentPage !== undefined) updateData.currentPage = parsedCurrentPage;
     if (notes !== undefined) updateData.notes = notes || null;
     if (review !== undefined) updateData.review = review || null;
-    if (rating !== undefined) updateData.rating = rating ? parseInt(rating) : null;
+    if (rating !== undefined) updateData.rating = parsedRating;
     if (isbn !== undefined) updateData.isbn = isbn;
     if (publisher !== undefined) updateData.publisher = publisher;
-    if (publishedYear !== undefined) updateData.publishedYear = publishedYear ? parseInt(publishedYear) : null;
+    if (publishedYear !== undefined) updateData.publishedYear = parsedYear;
     if (language !== undefined) updateData.language = language;
     if (description !== undefined) updateData.description = description;
     if (coverImage !== undefined) updateData.coverImage = coverImage;

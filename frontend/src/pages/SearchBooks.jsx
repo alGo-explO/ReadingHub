@@ -31,8 +31,6 @@ function SearchBooks() {
         priority: 'MEDIUM'
       };
 
-      console.log('Sending book data:', cleanBookData);
-
       const response = await fetch(`${API_URL}/api/books`, {
         method: 'POST',
         headers: {
@@ -43,7 +41,7 @@ function SearchBooks() {
       });
 
       if (response.ok) {
-        const newBook = await response.json();
+        await response.json();
         setAddedBooks(prev => new Set([...prev, bookData.title]));
         
         // Show success message briefly

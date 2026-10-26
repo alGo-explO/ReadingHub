@@ -1,25 +1,8 @@
 import express from 'express';
-import { PrismaClient } from '@prisma/client';
-import jwt from 'jsonwebtoken';
+import prisma from '../lib/prisma.js';
+import authenticateToken from '../middleware/auth.js';
 
 const router = express.Router();
-const prisma = new PrismaClient();
-
-
-const authenticateToken = (req, res, next) => {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
-
-  if (!token) {
-    return res.status(401).json({ error: 'Access token required' });
-  }
-
-  jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
-    if (err) return res.status(403).json({ error: 'Invalid token' });
-    req.userId = user.userId;
-    next();
-  });
-};
 
 
 router.get('/', authenticateToken, async (req, res) => {
@@ -46,16 +29,22 @@ router.post('/', authenticateToken, async (req, res) => {
   try {
     const { name, description, color, isPublic } = req.body;
 
-    if (!name) {
+    if (typeof name !== 'string' || !name.trim()) {
       return res.status(400).json({ error: 'Collection name is required' });
+    }
+    if (name.trim().length > 100) {
+      return res.status(400).json({ error: 'Collection name must be 100 characters or fewer' });
+    }
+    if (color && !/^#[0-9a-f]{6}$/i.test(color)) {
+      return res.status(400).json({ error: 'Collection color must be a six-digit hex color' });
     }
 
     const collection = await prisma.collection.create({
       data: {
-        name,
-        description,
+        name: name.trim(),
+        description: typeof description === 'string' ? description.trim().slice(0, 1000) || null : null,
         color: color || '#6366f1',
-        isPublic: isPublic || false,
+        isPublic: isPublic === true,
         userId: req.userId
       },
       include: {

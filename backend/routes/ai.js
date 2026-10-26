@@ -1,60 +1,16 @@
 import express from 'express';
-import jwt from 'jsonwebtoken';
-import { PrismaClient } from '@prisma/client';
+import prisma from '../lib/prisma.js';
+import authenticateToken from '../middleware/auth.js';
 import geminiService from '../services/geminiService.js';
 
 const router = express.Router();
-const prisma = new PrismaClient();
-
-const authenticateToken = (req, res, next) => {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
-
-  if (!token) {
-    return res.status(401).json({ error: 'Access token required' });
-  }
-
-  if (!process.env.JWT_SECRET) {
-    console.error('JWT_SECRET environment variable is not set');
-    return res.status(500).json({ error: 'Server configuration error' });
-  }
-
-  jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
-    if (err) {
-      console.error('JWT verification error:', err.message);
-      return res.status(403).json({ error: 'Invalid token' });
-    }
-    req.userId = user.userId;
-    next();
-  });
-};
-
-router.get('/test', authenticateToken, async (req, res) => {
-  try {
-    console.log('Testing AI service...');
-    
-    geminiService.ensureInitialized();
-    
-    res.json({
-      status: 'OK',
-      message: 'AI service is working',
-      timestamp: new Date().toISOString()
-    });
-  } catch (error) {
-    console.error('AI service test failed:', error);
-    res.status(500).json({
-      error: 'AI service test failed',
-      message: error.message
-    });
-  }
-});
 
 router.get('/recommendations', authenticateToken, async (req, res) => {
   try {
-    console.log('Generating AI recommendations for user:', req.userId);
-
     const userBooks = await prisma.book.findMany({
       where: { userId: req.userId },
+      orderBy: { updatedAt: 'desc' },
+      take: 200,
       select: {
         title: true,
         author: true,
@@ -75,9 +31,6 @@ router.get('/recommendations', authenticateToken, async (req, res) => {
       genres: [...new Set(userBooks.flatMap(book => book.genre || []))],
       authors: [...new Set(userBooks.map(book => book.author))].slice(0, 5)
     };
-
-    console.log('User books:', userBooks.length);
-    console.log('Preferences:', preferences);
 
     try {
       const recommendations = await geminiService.generateBookRecommendations(userBooks, preferences);
@@ -111,10 +64,10 @@ router.get('/recommendations', authenticateToken, async (req, res) => {
 
 router.get('/insights', authenticateToken, async (req, res) => {
   try {
-    console.log('Generating reading insights for user:', req.userId);
-
     const userBooks = await prisma.book.findMany({
-      where: { userId: req.userId }
+      where: { userId: req.userId },
+      orderBy: { updatedAt: 'desc' },
+      take: 200
     });
 
 
@@ -167,9 +120,6 @@ router.get('/insights', authenticateToken, async (req, res) => {
 router.get('/summary/:bookId', authenticateToken, async (req, res) => {
   try {
     const { bookId } = req.params;
-    console.log('Generating book summary for book:', bookId);
-
-
     const book = await prisma.book.findFirst({
       where: {
         id: bookId,
@@ -200,11 +150,10 @@ router.get('/summary/:bookId', authenticateToken, async (req, res) => {
 
 router.get('/goals', authenticateToken, async (req, res) => {
   try {
-    console.log('Generating reading goals for user:', req.userId);
-
-
     const userBooks = await prisma.book.findMany({
-      where: { userId: req.userId }
+      where: { userId: req.userId },
+      orderBy: { updatedAt: 'desc' },
+      take: 200
     });
 
 
@@ -229,57 +178,53 @@ router.post('/chat', authenticateToken, async (req, res) => {
   try {
     const { message, bookId } = req.body;
     
-    if (!message) {
+    if (typeof message !== 'string' || !message.trim()) {
       return res.status(400).json({ error: 'Message is required' });
     }
-
-    console.log('AI chat request from user:', req.userId);
+    if (message.length > 4000) {
+      return res.status(400).json({ error: 'Message must be 4000 characters or fewer' });
+    }
 
     let context = '';
     
-    if (bookId) {
-     
-      const book = await prisma.book.findFirst({
-        where: {
-          id: bookId,
-          userId: req.userId
-        }
-      });
-      
-      if (book) {
-        context = `Context: User is asking about "${book.title}" by ${book.author}. `;
-        if (book.notes) context += `User's notes: ${book.notes}. `;
-        if (book.review) context += `User's review: ${book.review}. `;
-      }
-    } else {
+    try {
+      if (bookId) {
+        const book = await prisma.book.findFirst({
+          where: {
+            id: bookId,
+            userId: req.userId
+          }
+        });
 
-      const recentBooks = await prisma.book.findMany({
-        where: { userId: req.userId },
-        orderBy: { updatedAt: 'desc' },
-        take: 5,
-        select: { title: true, author: true, status: true }
-      });
-      
-      if (recentBooks.length > 0) {
-        context = `Context: User's recent books: ${recentBooks.map(b => `"${b.title}" by ${b.author} (${b.status})`).join(', ')}. `;
+        if (book) {
+          context = `Context: User is asking about "${book.title}" by ${book.author}. `;
+          if (book.notes) context += `User's notes: ${book.notes}. `;
+          if (book.review) context += `User's review: ${book.review}. `;
+        }
+      } else {
+        const recentBooks = await prisma.book.findMany({
+          where: { userId: req.userId },
+          orderBy: { updatedAt: 'desc' },
+          take: 5,
+          select: { title: true, author: true, status: true }
+        });
+
+        if (recentBooks && recentBooks.length > 0) {
+          context = `Context: User's recent books: ${recentBooks.map(b => `"${b.title}" by ${b.author} (${b.status})`).join(', ')}. `;
+        }
       }
+    } catch (contextError) {
+      console.warn('Could not retrieve book context for AI chat:', contextError.message);
     }
 
-    const prompt = `${context}User question: ${message}
-
-Please provide a helpful, friendly response about books and reading. Keep it conversational and engaging.`;
-
-    geminiService.ensureInitialized();
-    const result = await geminiService.model.generateContent(prompt);
-    const response = await result.response;
-    const aiResponse = response.text();
+    const aiResponse = await geminiService.chat(message.trim(), context);
 
     res.json({
       response: aiResponse,
       timestamp: new Date().toISOString()
     });
   } catch (error) {
-    console.error('Error in AI chat:', error);
+    console.error('Error in AI chat route:', error);
     res.status(500).json({ 
       error: 'Failed to process chat message',
       message: 'Please try again later'

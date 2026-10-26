@@ -1,12 +1,5 @@
-// API URL configuration
 const isDevelopment = import.meta.env.DEV;
-const productionApiUrl = 'https://capstone-sem3-12k8.onrender.com';
 const developmentApiUrl = 'http://localhost:5001';
 
-export const API_URL = import.meta.env.VITE_API_URL || 
-  (isDevelopment ? developmentApiUrl : productionApiUrl);
-
-// Debug logging for production
-if (!isDevelopment) {
-  console.log('Production API URL:', API_URL);
-}
+export const API_URL = (import.meta.env.VITE_API_URL || (isDevelopment ? developmentApiUrl : ''))
+  .replace(/\/$/, '');
