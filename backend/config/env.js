@@ -1,4 +1,5 @@
 const REQUIRED_VARS = ['DATABASE_URL', 'JWT_SECRET'];
+const PRODUCTION_ORIGINS = ['https://readinghub-1.onrender.com'];
 
 export function validateEnvironment() {
   const required = process.env.NODE_ENV === 'production'
@@ -31,6 +32,7 @@ export function validateEnvironment() {
 
 export function getAllowedOrigins() {
   const configured = [
+    ...PRODUCTION_ORIGINS,
     process.env.FRONTEND_URL,
     ...(process.env.ALLOWED_ORIGINS || '').split(',')
   ]

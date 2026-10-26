@@ -17,6 +17,6 @@ services:
       - key: GEMINI_MODEL
         value: gemini-2.5-flash
       - key: FRONTEND_URL
-        value: https://capstone-sem3-kappa.vercel.app
+        value: https://readinghub-1.onrender.com
       - key: NODE_ENV
         value: production
