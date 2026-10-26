@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { API_URL } from '../config';
 
 function Library() {
+  const navigate = useNavigate();
   const [books, setBooks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -37,7 +38,7 @@ function Library() {
         setPagination(data.pagination);
       } else if (response.status === 401 || response.status === 403) {
         localStorage.removeItem('token');
-        window.location.href = '/login';
+        navigate('/login', { replace: true });
       }
     } catch (error) {
       console.error('Error fetching books:', error);

@@ -27,7 +27,7 @@ function Navbar({ setToken }) {
         } else if (response.status === 401 || response.status === 403) {
           localStorage.removeItem('token');
           setToken(null);
-          window.location.href = '/login';
+          navigate('/login', { replace: true });
         }
       } catch (error) {
         console.error('Failed to fetch user data:', error);
@@ -40,15 +40,13 @@ function Navbar({ setToken }) {
     };
     window.addEventListener('profile-updated', handleProfileUpdate);
     return () => window.removeEventListener('profile-updated', handleProfileUpdate);
-  }, []);
+  }, [navigate, setToken]);
 
   const handleLogout = () => {
     localStorage.removeItem('token');
     setToken(null);
     setShowProfileMenu(false);
-    navigate('/login');
-    // Force page refresh to clear any cached state
-    window.location.reload();
+    navigate('/login', { replace: true });
   };
 
   const isActive = (path) => location.pathname === path;

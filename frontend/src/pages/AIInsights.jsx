@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { API_URL } from '../config';
 
 function AIInsights() {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('recommendations');
   const [loading, setLoading] = useState(false);
   const [recommendations, setRecommendations] = useState([]);
@@ -24,7 +26,7 @@ function AIInsights() {
         setRecommendations(data.recommendations || []);
       } else if (response.status === 401 || response.status === 403) {
         localStorage.removeItem('token');
-        window.location.href = '/login';
+        navigate('/login', { replace: true });
       }
     } catch (error) {
       console.error('Error fetching recommendations:', error);
@@ -46,7 +48,7 @@ function AIInsights() {
         setInsights(data.insights);
       } else if (response.status === 401 || response.status === 403) {
         localStorage.removeItem('token');
-        window.location.href = '/login';
+        navigate('/login', { replace: true });
       }
     } catch (error) {
       console.error('Error fetching insights:', error);
@@ -68,7 +70,7 @@ function AIInsights() {
         setGoals(data.goals);
       } else if (response.status === 401 || response.status === 403) {
         localStorage.removeItem('token');
-        window.location.href = '/login';
+        navigate('/login', { replace: true });
       }
     } catch (error) {
       console.error('Error fetching goals:', error);

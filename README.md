@@ -271,7 +271,7 @@ VITE_API_URL=https://your-backend.onrender.com
 
 After adding or changing `VITE_API_URL`, redeploy the frontend because Vite reads this value during the build.
 
-This repository does not include a `vercel.json` file. The application uses React Router's browser history mode, so opening a nested route such as `/profile` directly may return a Vercel 404 unless an SPA rewrite is configured. Navigation from the application root continues to work normally.
+The checked-in `frontend/vercel.json` sends client-side routes such as `/login` and `/profile` to `index.html`. Keep this file when deploying to Vercel so page refreshes, direct links, and logout navigation do not return a platform 404.
 
 See [DEPLOYMENT.md](./DEPLOYMENT.md) for a more detailed deployment checklist.
 
@@ -300,7 +300,7 @@ Set `VITE_API_URL` in Vercel or in `frontend/.env` for a local production build.
 
 ### Refreshing a frontend page returns a Vercel 404
 
-The frontend uses client-side routes. Configure a Vercel SPA rewrite that sends unmatched paths to `/index.html`, or open the application from its root URL before navigating.
+Confirm that Vercel's Root Directory is `frontend`, that `frontend/vercel.json` is committed, and that the latest commit has been redeployed. The included SPA rewrite sends client-side routes to `/index.html`.
 
 ### The browser reports a CORS error
 
